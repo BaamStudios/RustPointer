@@ -37,11 +37,13 @@ jobs:
         working-directory: app
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      - name: Generate icons
+        working-directory: app
+        run: bun run icons
+
       - name: Build distributables
         working-directory: app
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bun run dist
+        run: bunx electron-builder --win --publish never
 
       - name: List build artifacts
         shell: bash
