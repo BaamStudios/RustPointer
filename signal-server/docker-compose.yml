@@ -1,0 +1,11 @@
+services:
+  signal-server:
+    build: .
+    image: presenter-cursor-signal-server
+    container_name: presenter-cursor-signal-server
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+    restart: unless-stopped
