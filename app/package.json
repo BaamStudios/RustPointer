@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --enable-logging"
+    "dev": "electron . --enable-logging",
+    "postinstall": "npx @electron/rebuild"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

@@ -114,6 +114,14 @@ async function tick() {
       targetId = win.id;
       focused = String(win.id) === String(foregroundId);
     }
+    if (windowManager && win && bounds) {
+      try {
+        const dwmBounds = await psFallback.getDwmBounds(win.id);
+        if (dwmBounds && dwmBounds.width > 0 && dwmBounds.height > 0) {
+          bounds = dwmBounds;
+        }
+      } catch { /* keep original bounds from native path */ }
+    }
   } catch (err) {
     // ignore – nächster Tick
   } finally {
