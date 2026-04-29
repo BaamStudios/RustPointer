@@ -10,6 +10,9 @@
 
   let dpr = window.devicePixelRatio || 1;
 
+  let displayW = window.innerWidth;
+  let displayH = window.innerHeight;
+
   const state = {
     pressed: false,
     last: null,
@@ -19,10 +22,10 @@
 
   function resize() {
     dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(window.innerWidth * dpr);
-    canvas.height = Math.floor(window.innerHeight * dpr);
-    canvas.style.width = window.innerWidth + 'px';
-    canvas.style.height = window.innerHeight + 'px';
+    canvas.width = Math.floor(displayW * dpr);
+    canvas.height = Math.floor(displayH * dpr);
+    canvas.style.width = displayW + 'px';
+    canvas.style.height = displayH + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener('resize', resize);
@@ -111,8 +114,8 @@
 
   function toScreen(p) {
     return {
-      x: p.x * window.innerWidth,
-      y: p.y * window.innerHeight
+      x: p.x * displayW,
+      y: p.y * displayH
     };
   }
 
@@ -132,6 +135,13 @@
 
   if (window.presenter && window.presenter.onCursor) {
     window.presenter.onCursor(onCursor);
+    window.presenter.getState().then((s) => {
+      if (s && s.displayBounds && s.displayBounds.width > 0 && s.displayBounds.height > 0) {
+        displayW = s.displayBounds.width;
+        displayH = s.displayBounds.height;
+        resize();
+      }
+    }).catch(() => {});
     window.presenter.notifyOverlayReady && window.presenter.notifyOverlayReady();
   }
 })();
