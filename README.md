@@ -57,14 +57,30 @@ Auf beiden Rechnern:
 
 ```bash
 cd app
+cp .env.example .env       # Werte anpassen (Signal-Server URL, Zielfenster)
 npm install
 npm start
 ```
 
+#### Konfiguration via `.env`
+
+`app/.env` wird beim Start eingelesen und befüllt die Defaults im UI.
+Verfügbare Variablen (siehe `app/.env.example`):
+
+| Variable               | Default              | Bedeutung                                       |
+|------------------------|----------------------|-------------------------------------------------|
+| `SIGNAL_SERVER_URL`    | `ws://localhost:3000`| WebSocket-Adresse des Signal-Servers            |
+| `ROOM_ID`              | *(leer)*             | Vorbefüllte Room-ID (beide Peers gleich)        |
+| `TARGET_WINDOW_TITLE`  | `RustDesk`           | Fenstertitel-Substring (case-insensitive)       |
+| `DEFAULT_MODE`         | `sender`             | `sender` \| `receiver` \| `both`                |
+
+Die Werte können im UI überschrieben werden – die `.env` liefert nur die
+Startwerte.
+
 Im UI:
 
-1. **Signal-Server URL** eintragen (z.B. `ws://meinserver:3000`)
-2. **Room-ID** auf beiden Seiten gleich setzen (z.B. `test123`)
+1. **Signal-Server URL** prüfen / anpassen
+2. **Room-ID** auf beiden Seiten gleich setzen
 3. **Verbinden** klicken
 4. **Modus** wählen:
    - *Sender* (zeigt Laser auf der Gegenseite),
@@ -76,9 +92,9 @@ Im UI:
 
 ### Fenstererkennung
 
-Standardmäßig wird das Fenster gesucht, dessen Titel `RustDesk` enthält. Im Control-UI
-lässt sich:
-- der **Suchstring** ändern (z.B. `Remote Desktop`)
+Standardmäßig wird das Fenster gesucht, dessen Titel `RustDesk` enthält (Default
+über `TARGET_WINDOW_TITLE` in der `.env` änderbar). Im Control-UI lässt sich:
+- der **Suchstring** zur Laufzeit ändern (z.B. `Remote Desktop`)
 - oder ein Fenster aus dem Dropdown **manuell auswählen**
 
 ## Tray-Icon

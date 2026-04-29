@@ -16,7 +16,15 @@
     windowSelect: $('windowSelect'),
     refreshWindowsBtn: $('refreshWindowsBtn'),
     boundsStatus: $('boundsStatus'),
-    modeButtons: Array.from(document.querySelectorAll('.modes button'))
+    modeButtons: Array.from(document.querySelectorAll('.modes button')),
+    peerList: $('peerList'),
+    peerCount: $('peerCount'),
+    logBox: $('logBox'),
+    clearLogBtn: $('clearLogBtn'),
+    sendRate: $('sendRate'),
+    recvRate: $('recvRate'),
+    sendTotal: $('sendTotal'),
+    recvTotal: $('recvTotal')
   };
 
   const RTC_CONFIG = {
@@ -33,8 +41,87 @@
     role: null,           // 'caller' or 'callee'
     peerConnected: false,
     wsConnected: false,
-    mode: 'sender'
+    mode: 'sender',
+    selfPeerId: null,
+    roomId: null,
+    peers: new Set(),     // alle peerIds im Raum (inkl. self)
+    sendCount: 0,
+    recvCount: 0,
+    lastSendPressed: null,
+    lastRecvPressed: null
   };
+
+  const rateState = {
+    sendInWindow: 0,
+    recvInWindow: 0
+  };
+
+  const LOG_MAX_LINES = 200;
+
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+  function nowTs() {
+    const d = new Date();
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
+  }
+
+  function logLine(kind, text) {
+    const line = document.createElement('div');
+    line.className = `l-${kind}`;
+    const ts = document.createElement('span');
+    ts.className = 'ts';
+    ts.textContent = nowTs();
+    line.appendChild(ts);
+    line.appendChild(document.createTextNode(text));
+    els.logBox.appendChild(line);
+    while (els.logBox.childElementCount > LOG_MAX_LINES) {
+      els.logBox.removeChild(els.logBox.firstChild);
+    }
+    els.logBox.scrollTop = els.logBox.scrollHeight;
+  }
+
+  function renderPeers() {
+    els.peerCount.textContent = String(state.peers.size);
+    els.peerList.innerHTML = '';
+    if (state.peers.size === 0) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = '— nicht verbunden —';
+      els.peerList.appendChild(li);
+      return;
+    }
+    const sorted = [...state.peers].sort((a, b) => {
+      if (a === state.selfPeerId) return -1;
+      if (b === state.selfPeerId) return 1;
+      return a.localeCompare(b);
+    });
+    for (const id of sorted) {
+      const li = document.createElement('li');
+      const isSelf = id === state.selfPeerId;
+      if (isSelf) li.classList.add('self');
+      const name = document.createElement('span');
+      name.textContent = id;
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = isSelf ? 'du' : 'remote';
+      li.appendChild(name);
+      li.appendChild(tag);
+      els.peerList.appendChild(li);
+    }
+  }
+
+  function resetPeers() {
+    state.selfPeerId = null;
+    state.roomId = null;
+    state.peers.clear();
+    renderPeers();
+  }
+
+  setInterval(() => {
+    els.sendRate.textContent = `${rateState.sendInWindow}/s`;
+    els.recvRate.textContent = `${rateState.recvInWindow}/s`;
+    rateState.sendInWindow = 0;
+    rateState.recvInWindow = 0;
+  }, 1000);
 
   function setBadge(el, text, kind) {
     el.textContent = text;
@@ -104,18 +191,32 @@
 
     dc.onopen = () => {
       console.log('[dc] open');
+      logLine('info', 'DataChannel offen — P2P aktiv');
       setPeerStatus(true);
     };
     dc.onclose = () => {
       console.log('[dc] close');
+      logLine('muted', 'DataChannel geschlossen');
       setPeerStatus(false);
     };
-    dc.onerror = (e) => console.warn('[dc] error', e);
+    dc.onerror = (e) => {
+      console.warn('[dc] error', e);
+      logLine('err', `DataChannel-Fehler: ${e && e.message ? e.message : 'unknown'}`);
+    };
     dc.onmessage = (evt) => {
       let payload;
       try { payload = JSON.parse(evt.data); }
       catch { return; }
       if (typeof payload.x !== 'number' || typeof payload.y !== 'number') return;
+      state.recvCount += 1;
+      rateState.recvInWindow += 1;
+      els.recvTotal.textContent = String(state.recvCount);
+      const pressed = !!payload.pressed;
+      if (state.lastRecvPressed !== pressed) {
+        state.lastRecvPressed = pressed;
+        const xy = `(${payload.x.toFixed(3)}, ${payload.y.toFixed(3)})`;
+        logLine('recv', pressed ? `← Empfang: Pointer aktiv ${xy}` : `← Empfang: Pointer inaktiv ${xy}`);
+      }
       if (window.presenter) window.presenter.sendCursorIncoming(payload);
     };
   }
@@ -181,27 +282,33 @@
     if (!url || !roomId) return;
 
     tearDown();
+    logLine('info', `Verbinde zu ${url} · Room "${roomId}"…`);
 
     let ws;
     try { ws = new WebSocket(url); }
     catch (err) {
       console.warn('[ws] connect failed:', err.message);
+      logLine('err', `WS-Verbindung fehlgeschlagen: ${err.message}`);
       return;
     }
     state.ws = ws;
 
     ws.onopen = () => {
       setWsStatus(true);
+      logLine('info', 'WebSocket offen — sende join…');
       wsSend({ type: 'join', roomId });
     };
 
     ws.onclose = () => {
       setWsStatus(false);
       tearDownPeer();
+      resetPeers();
+      logLine('muted', 'WebSocket geschlossen');
     };
 
     ws.onerror = (e) => {
       console.warn('[ws] error', e);
+      logLine('err', 'WebSocket-Fehler');
     };
 
     ws.onmessage = async (evt) => {
@@ -211,24 +318,47 @@
 
       if (msg.type === 'joined') {
         console.log(`[ws] joined ${msg.roomId} (${msg.peerCount} peers)`);
+        state.selfPeerId = msg.peerId;
+        state.roomId = msg.roomId;
+        state.peers = new Set([msg.peerId, ...(Array.isArray(msg.peers) ? msg.peers : [])]);
+        renderPeers();
+        logLine('info', `Im Raum "${msg.roomId}" als ${msg.peerId} (${msg.peerCount} Peer${msg.peerCount === 1 ? '' : 's'})`);
         if (msg.peerCount === 2) {
           // Wir sind der zweite – wir initiieren das Offer
-          startCall().catch((err) => console.warn('startCall failed:', err.message));
+          logLine('info', 'Starte WebRTC-Offer…');
+          startCall().catch((err) => {
+            console.warn('startCall failed:', err.message);
+            logLine('err', `Offer fehlgeschlagen: ${err.message}`);
+          });
         }
       } else if (msg.type === 'peer-joined') {
-        // Wir warten auf Offer vom Newcomer? Nein: der Newcomer initiiert.
         console.log('[ws] peer joined:', msg.peerId);
+        state.peers.add(msg.peerId);
+        renderPeers();
+        logLine('info', `Peer ${msg.peerId} ist beigetreten (${state.peers.size} im Raum)`);
       } else if (msg.type === 'peer-left') {
         console.log('[ws] peer left:', msg.peerId);
+        state.peers.delete(msg.peerId);
+        renderPeers();
+        logLine('muted', `Peer ${msg.peerId} hat verlassen`);
         tearDownPeer();
       } else if (msg.type === 'offer') {
-        await handleOffer(msg).catch((err) => console.warn('offer failed:', err.message));
+        logLine('info', 'Offer empfangen — sende Answer');
+        await handleOffer(msg).catch((err) => {
+          console.warn('offer failed:', err.message);
+          logLine('err', `Answer fehlgeschlagen: ${err.message}`);
+        });
       } else if (msg.type === 'answer') {
-        await handleAnswer(msg).catch((err) => console.warn('answer failed:', err.message));
+        logLine('info', 'Answer empfangen');
+        await handleAnswer(msg).catch((err) => {
+          console.warn('answer failed:', err.message);
+          logLine('err', `Answer-Verarbeitung fehlgeschlagen: ${err.message}`);
+        });
       } else if (msg.type === 'ice') {
         await handleIce(msg).catch((err) => console.warn('ice failed:', err.message));
       } else if (msg.type === 'error') {
         console.warn('[signal] error:', msg.message);
+        logLine('err', `Signal-Server-Fehler: ${msg.message}`);
       }
     };
   }
@@ -237,6 +367,15 @@
     if (!state.dc || state.dc.readyState !== 'open') return;
     try {
       state.dc.send(JSON.stringify(payload));
+      state.sendCount += 1;
+      rateState.sendInWindow += 1;
+      els.sendTotal.textContent = String(state.sendCount);
+      const pressed = !!payload.pressed;
+      if (state.lastSendPressed !== pressed) {
+        state.lastSendPressed = pressed;
+        const xy = `(${payload.x.toFixed(3)}, ${payload.y.toFixed(3)})`;
+        logLine('send', pressed ? `→ Sende: Pointer aktiv ${xy}` : `→ Sende: Pointer inaktiv ${xy}`);
+      }
     } catch (err) {
       // ignore – DC könnte gerade schließen
     }
@@ -276,7 +415,15 @@
   }
 
   els.connectBtn.addEventListener('click', connect);
-  els.disconnectBtn.addEventListener('click', () => tearDown());
+  els.disconnectBtn.addEventListener('click', () => {
+    logLine('muted', 'Trennung durch Benutzer');
+    tearDown();
+    resetPeers();
+  });
+
+  els.clearLogBtn.addEventListener('click', () => {
+    els.logBox.innerHTML = '';
+  });
 
   els.modeButtons.forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -313,6 +460,16 @@
     window.presenter.onCursorSend((payload) => sendCursor(payload));
   }
 
-  refreshState();
-  loadWindows();
+  async function applyEnvDefaults() {
+    if (!window.presenter || !window.presenter.getConfig) return;
+    const cfg = await window.presenter.getConfig();
+    if (cfg.signalServerUrl) els.server.value = cfg.signalServerUrl;
+    if (cfg.roomId) els.room.value = cfg.roomId;
+    if (cfg.targetTitle) els.targetTitle.value = cfg.targetTitle;
+  }
+
+  applyEnvDefaults().then(() => {
+    refreshState();
+    loadWindows();
+  });
 })();

@@ -1,10 +1,21 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen } = require('electron');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen } = require('electron');
 
 const mouseHook = require('./mouse-hook');
 const windowFinder = require('./window-finder');
+
+const ENV = {
+  signalServerUrl: (process.env.SIGNAL_SERVER_URL || 'ws://localhost:3000').trim(),
+  roomId: (process.env.ROOM_ID || '').trim(),
+  targetTitle: (process.env.TARGET_WINDOW_TITLE || 'RustDesk').trim(),
+  defaultMode: ['sender', 'receiver', 'both'].includes((process.env.DEFAULT_MODE || '').trim())
+    ? process.env.DEFAULT_MODE.trim()
+    : 'sender'
+};
 
 let controlWindow = null;
 let overlayWindow = null;
@@ -13,8 +24,8 @@ let tray = null;
 const state = {
   presenterActive: false,
   connected: false,
-  mode: 'sender',
-  targetTitle: 'RustDesk',
+  mode: ENV.defaultMode,
+  targetTitle: ENV.targetTitle,
   manualWindowId: null,
   rustDeskBounds: null
 };
@@ -209,6 +220,13 @@ function forwardCursorToOverlay(payload) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   overlayWindow.webContents.send('cursor', payload);
 }
+
+ipcMain.handle('get-config', () => ({
+  signalServerUrl: ENV.signalServerUrl,
+  roomId: ENV.roomId,
+  targetTitle: ENV.targetTitle,
+  defaultMode: ENV.defaultMode
+}));
 
 ipcMain.handle('get-state', () => publicState());
 

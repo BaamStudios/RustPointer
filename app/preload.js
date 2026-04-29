@@ -3,6 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('presenter', {
+  getConfig: () => ipcRenderer.invoke('get-config'),
   getState: () => ipcRenderer.invoke('get-state'),
   setMode: (mode) => ipcRenderer.invoke('set-mode', mode),
   togglePresenter: () => ipcRenderer.invoke('toggle-presenter'),

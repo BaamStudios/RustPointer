@@ -100,6 +100,57 @@
       border-radius: 4px;
       font-size: 11px;
     }
+    ul.peers {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    ul.peers li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: #1a1b20;
+      margin-bottom: 4px;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+    }
+    ul.peers li.self { border: 1px solid var(--accent); }
+    ul.peers li .tag {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #393b46;
+      color: var(--muted);
+    }
+    ul.peers li.self .tag { background: rgba(79,140,255,0.2); color: var(--accent); }
+    ul.peers .empty { color: var(--muted); font-style: italic; padding: 6px 4px; }
+    .log {
+      background: #1a1b20;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      height: 160px;
+      overflow-y: auto;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .log .l-info { color: var(--text); }
+    .log .l-send { color: var(--warn); }
+    .log .l-recv { color: var(--ok); }
+    .log .l-err { color: var(--err); }
+    .log .l-muted { color: var(--muted); }
+    .log .ts { color: var(--muted); margin-right: 6px; }
+    .rates {
+      display: flex;
+      gap: 8px;
+      margin: 0 0 6px;
+      font-size: 11px;
+    }
+    .rates span { background: #1a1b20; padding: 3px 8px; border-radius: 999px; color: var(--muted); }
+    .rates b { color: var(--text); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -108,9 +159,9 @@
   <div class="panel">
     <h2>Verbindung</h2>
     <label for="server">Signal-Server URL</label>
-    <input id="server" type="text" placeholder="ws://localhost:3000" value="ws://localhost:3000" />
+    <input id="server" type="text" placeholder="ws://localhost:3000" />
     <label for="room">Room-ID</label>
-    <input id="room" type="text" placeholder="z.B. test123" value="test123" />
+    <input id="room" type="text" placeholder="z.B. test123" />
     <div class="row" style="margin-top: 10px;">
       <button id="connectBtn">Verbinden</button>
       <button id="disconnectBtn" class="secondary" disabled>Trennen</button>
@@ -123,6 +174,13 @@
       <span class="muted">Peer (P2P):</span>
       <span id="peerStatus" class="badge err">getrennt</span>
     </div>
+  </div>
+
+  <div class="panel">
+    <h2>Peers im Raum (<span id="peerCount">0</span>)</h2>
+    <ul id="peerList" class="peers">
+      <li class="empty">— nicht verbunden —</li>
+    </ul>
   </div>
 
   <div class="panel">
@@ -148,7 +206,7 @@
     <h2>RustDesk-Fenster</h2>
     <label for="targetTitle">Fenstertitel enthält</label>
     <div class="row">
-      <input id="targetTitle" type="text" value="RustDesk" />
+      <input id="targetTitle" type="text" placeholder="RustDesk" />
       <button id="applyTitleBtn" class="secondary">Setzen</button>
     </div>
     <label for="windowSelect" style="margin-top: 8px;">Manuelle Auswahl (überschreibt Titel-Suche)</label>
@@ -161,6 +219,18 @@
     <div class="status-line" style="margin-top: 10px;">
       <span class="muted">Erkannte Bounds:</span>
       <span id="boundsStatus" class="muted small">—</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Log</h2>
+    <div class="rates">
+      <span>Senden: <b id="sendRate">0/s</b> · <b id="sendTotal">0</b> total</span>
+      <span>Empfangen: <b id="recvRate">0/s</b> · <b id="recvTotal">0</b> total</span>
+    </div>
+    <div id="logBox" class="log" aria-live="polite"></div>
+    <div class="row" style="margin-top: 8px;">
+      <button id="clearLogBtn" class="secondary">Log leeren</button>
     </div>
   </div>
 

@@ -66,10 +66,11 @@ wss.on('connection', (ws) => {
         send(ws, { type: 'error', message: 'room full' });
         return;
       }
+      const existingPeers = Array.from(room).map((p) => p.peerId);
       ws.roomId = roomId;
       room.add(ws);
       const peerCount = room.size;
-      send(ws, { type: 'joined', roomId, peerId: ws.peerId, peerCount });
+      send(ws, { type: 'joined', roomId, peerId: ws.peerId, peerCount, peers: existingPeers });
       broadcastToOthers(room, ws, { type: 'peer-joined', peerId: ws.peerId, peerCount });
       console.log(`peer ${ws.peerId} joined room ${roomId} (${peerCount} peers)`);
       return;
@@ -89,7 +90,7 @@ wss.on('connection', (ws) => {
     const room = rooms.get(ws.roomId);
     if (!room) return;
     room.delete(ws);
-    broadcastToOthers(room, ws, { type: 'peer-left', peerId: ws.peerId });
+    broadcastToOthers(room, ws, { type: 'peer-left', peerId: ws.peerId, peerCount: room.size });
     if (room.size === 0) rooms.delete(ws.roomId);
     console.log(`peer ${ws.peerId} left room ${ws.roomId}`);
   });
