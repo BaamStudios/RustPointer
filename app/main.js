@@ -344,6 +344,9 @@ app.whenReady().then(() => {
     onCursor: (payload) => {
       if (!controlWindow || controlWindow.isDestroyed()) return;
       controlWindow.webContents.send('cursor-send', payload);
+    },
+    onLog: ({ level, message }) => {
+      logToControl(level, `[Maus] ${message}`);
     }
   });
 
