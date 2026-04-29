@@ -11,7 +11,8 @@
     "predist": "node build-resources/generate-icons.js",
     "dist": "electron-builder --win",
     "dist:portable": "electron-builder --win portable",
-    "dist:installer": "electron-builder --win nsis"
+    "dist:installer": "electron-builder --win nsis",
+    "postinstall": "npx @electron/rebuild"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

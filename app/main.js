@@ -80,7 +80,8 @@ const state = {
   mode: ENV.defaultMode,
   targetTitle: ENV.targetTitle,
   manualWindowId: null,
-  rustDeskBounds: null
+  rustDeskBounds: null,
+  displayBounds: null
 };
 
 function createControlWindow() {
@@ -295,7 +296,8 @@ function publicState() {
     connected: state.connected,
     targetTitle: state.targetTitle,
     manualWindowId: state.manualWindowId,
-    rustDeskBounds: state.rustDeskBounds
+    rustDeskBounds: state.rustDeskBounds,
+    displayBounds: state.displayBounds
   };
 }
 
@@ -371,6 +373,11 @@ ipcMain.on('control-ready', () => {
 
 app.whenReady().then(() => {
   if (process.platform === 'win32') app.setAppUserModelId('Presenter-Cursor');
+
+  try {
+    const primary = screen.getPrimaryDisplay();
+    state.displayBounds = { x: primary.bounds.x, y: primary.bounds.y, width: primary.bounds.width, height: primary.bounds.height };
+  } catch {} 
 
   createControlWindow();
 
