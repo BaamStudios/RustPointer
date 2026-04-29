@@ -6,7 +6,12 @@
   "type": "commonjs",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --enable-logging"
+    "dev": "electron . --enable-logging",
+    "icons": "node build-resources/generate-icons.js",
+    "predist": "node build-resources/generate-icons.js",
+    "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable",
+    "dist:installer": "electron-builder --win nsis"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -15,6 +20,51 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.maetschke.presenter-cursor",
+    "productName": "Presenter-Cursor",
+    "directories": {
+      "output": "../dist",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "**/*",
+      "!**/*.md",
+      "!build-resources/generate-icons.js",
+      "!.env"
+    ],
+    "extraResources": [
+      {
+        "from": ".env.example",
+        "to": ".env.example"
+      }
+    ],
+    "asarUnpack": [
+      "**/*.node",
+      "**/uiohook-napi/**",
+      "**/node-window-manager/**"
+    ],
+    "win": {
+      "icon": "build-resources/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Presenter-Cursor"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    }
   }
 }

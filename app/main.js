@@ -1,9 +1,40 @@
 'use strict';
 
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
-
+const fs = require('fs');
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen } = require('electron');
+
+// .env aus mehreren Standorten laden (erste Treffer gewinnt):
+// 1. neben der ausführbaren Datei (User legt .env neben Presenter-Cursor.exe)
+// 2. userData/.env (persistente Config in %APPDATA%)
+// 3. process.resourcesPath/.env.example (initial vom Build mitgeliefert)
+// 4. __dirname/.env (Dev-Modus)
+function loadEnv() {
+  const userDataEnv = path.join(app.getPath('userData'), '.env');
+  const candidates = [
+    path.join(path.dirname(app.getPath('exe')), '.env'),
+    userDataEnv,
+    path.join(__dirname, '.env')
+  ];
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) {
+      require('dotenv').config({ path: p });
+      return p;
+    }
+  }
+  // Erstes Mal gepackte App ohne .env: .env.example -> userData/.env kopieren
+  const exampleSrc = path.join(process.resourcesPath || '', '.env.example');
+  if (fs.existsSync(exampleSrc)) {
+    try {
+      fs.mkdirSync(path.dirname(userDataEnv), { recursive: true });
+      fs.copyFileSync(exampleSrc, userDataEnv);
+      require('dotenv').config({ path: userDataEnv });
+      return userDataEnv;
+    } catch {}
+  }
+  return null;
+}
+const loadedEnvPath = loadEnv();
 
 const mouseHook = require('./mouse-hook');
 const windowFinder = require('./window-finder');
@@ -59,6 +90,7 @@ function createControlWindow() {
     title: 'Presenter-Cursor',
     show: false,
     autoHideMenuBar: true,
+    icon: resolveAssetPath('icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -134,14 +166,39 @@ function hideOverlay() {
   }
 }
 
+function resolveAssetPath(rel) {
+  // Im Dev-Modus: build-resources/ neben main.js
+  // Gepackt: Resources werden via electron-builder mit-eingepackt (asar oder als Datei)
+  const candidates = [
+    path.join(__dirname, 'build-resources', rel),
+    path.join(process.resourcesPath || '', 'app.asar', 'build-resources', rel),
+    path.join(process.resourcesPath || '', 'build-resources', rel)
+  ];
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return candidates[0];
+}
+
+let trayIconActive = null;
+let trayIconInactive = null;
+function loadTrayIcons() {
+  try {
+    trayIconActive = nativeImage.createFromPath(resolveAssetPath('tray-active.png'));
+    trayIconInactive = nativeImage.createFromPath(resolveAssetPath('tray-inactive.png'));
+  } catch (err) {
+    console.warn('[tray] icon load failed:', err.message);
+  }
+}
+
 function trayIconImage() {
+  if (!trayIconActive || !trayIconInactive) loadTrayIcons();
+  const img = state.presenterActive ? trayIconActive : trayIconInactive;
+  if (img && !img.isEmpty()) return img;
+  // Fallback: simples Quadrat
   const size = 16;
   const buf = Buffer.alloc(size * size * 4);
-  let color;
-  if (state.presenterActive) color = [255, 60, 60, 255];
-  else if (state.connected) color = [60, 200, 90, 255];
-  else color = [160, 160, 160, 255];
-
+  const color = state.presenterActive ? [255, 60, 60, 255] : [160, 160, 160, 255];
   for (let i = 0; i < size * size; i++) {
     buf[i * 4 + 0] = color[0];
     buf[i * 4 + 1] = color[1];
@@ -155,15 +212,14 @@ function updateTray() {
   if (!tray) return;
   tray.setImage(trayIconImage());
 
-  let tooltip = 'Presenter-Cursor';
-  if (state.presenterActive) tooltip += ' – Presenter aktiv';
-  else if (state.connected) tooltip += ' – verbunden';
-  else tooltip += ' – nicht verbunden';
+  const tooltip = state.presenterActive
+    ? 'Presenter-Cursor – Pointer AKTIV (klicken zum Ausschalten)'
+    : 'Presenter-Cursor – Pointer aus (klicken zum Einschalten)';
   tray.setToolTip(tooltip);
 
   const menu = Menu.buildFromTemplate([
     {
-      label: state.presenterActive ? 'Presenter-Modus AUS' : 'Presenter-Modus EIN',
+      label: state.presenterActive ? 'Pointer AUS' : 'Pointer EIN',
       click: () => togglePresenter()
     },
     { type: 'separator' },
@@ -318,6 +374,12 @@ app.whenReady().then(() => {
 
   createControlWindow();
 
+  if (loadedEnvPath) {
+    logToControl('muted', `[Config] .env geladen aus: ${loadedEnvPath}`);
+  } else {
+    logToControl('warn', '[Config] Keine .env gefunden — Standardwerte werden verwendet.');
+  }
+
   tray = new Tray(trayIconImage());
   tray.on('click', () => {
     if (state.mode === 'sender' || state.mode === 'both') togglePresenter();
@@ -352,8 +414,6 @@ app.whenReady().then(() => {
       logToControl(level, `[Maus] ${message}`);
     }
   });
-
-  showControl();
 });
 
 app.on('window-all-closed', (e) => {

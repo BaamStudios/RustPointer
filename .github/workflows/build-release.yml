@@ -1,0 +1,67 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: app
+        run: bun install --frozen-lockfile
+
+      - name: Read app version
+        id: version
+        shell: bash
+        working-directory: app
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Build distributables
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun run dist
+
+      - name: List build artifacts
+        shell: bash
+        run: ls -la dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}-build.${{ github.run_number }}
+          name: Presenter-Cursor v${{ steps.version.outputs.version }} (build ${{ github.run_number }})
+          body: |
+            Automatischer Build von Commit `${{ github.sha }}`.
+
+            **Artefakte:**
+            - `Presenter-Cursor-${{ steps.version.outputs.version }}-x64.exe` — NSIS-Installer
+            - `Presenter-Cursor-${{ steps.version.outputs.version }}-portable.exe` — Portable-Variante
+          draft: false
+          prerelease: false
+          files: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
+          fail_on_unmatched_files: false
