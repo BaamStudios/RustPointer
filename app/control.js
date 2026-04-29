@@ -49,8 +49,14 @@
     sendCount: 0,
     recvCount: 0,
     lastSendPressed: null,
-    lastRecvPressed: null
+    lastRecvPressed: null,
+    userDisconnected: false,  // true nach manueller Trennung — kein Auto-Reconnect
+    reconnectTimer: null,
+    reconnectAttempt: 0
   };
+
+  const RECONNECT_BASE_MS = 1000;
+  const RECONNECT_MAX_MS = 30000;
 
   const rateState = {
     sendInWindow: 0,
@@ -174,11 +180,36 @@
 
   function tearDown() {
     if (state.ws) {
-      try { state.ws.close(); } catch {}
+      try {
+        state.ws.onopen = state.ws.onclose = state.ws.onerror = state.ws.onmessage = null;
+        state.ws.close();
+      } catch {}
       state.ws = null;
     }
     tearDownPeer();
     setWsStatus(false);
+  }
+
+  function cancelReconnect() {
+    if (state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
+  }
+
+  function scheduleReconnect(reason) {
+    if (state.userDisconnected) return;
+    if (state.reconnectTimer) return;
+    const url = els.server.value.trim();
+    const roomId = els.room.value.trim();
+    if (!url || !roomId) return;
+    const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, state.reconnectAttempt));
+    state.reconnectAttempt += 1;
+    logLine('muted', `Reconnect in ${(delay / 1000).toFixed(0)}s (Versuch ${state.reconnectAttempt})${reason ? ' — ' + reason : ''}`);
+    state.reconnectTimer = setTimeout(() => {
+      state.reconnectTimer = null;
+      connect();
+    }, delay);
   }
 
   function wsSend(obj) {
@@ -296,6 +327,8 @@
     const roomId = els.room.value.trim();
     if (!url || !roomId) return;
 
+    state.userDisconnected = false;
+    cancelReconnect();
     tearDown();
     logLine('info', `Verbinde zu ${url} · Room "${roomId}"…`);
 
@@ -304,21 +337,25 @@
     catch (err) {
       console.warn('[ws] connect failed:', err.message);
       logLine('err', `WS-Verbindung fehlgeschlagen: ${err.message}`);
+      scheduleReconnect('Verbindungsaufbau fehlgeschlagen');
       return;
     }
     state.ws = ws;
 
     ws.onopen = () => {
       setWsStatus(true);
+      state.reconnectAttempt = 0;
       logLine('info', 'WebSocket offen — sende join…');
       wsSend({ type: 'join', roomId });
     };
 
-    ws.onclose = () => {
+    ws.onclose = (evt) => {
       setWsStatus(false);
       tearDownPeer();
       resetPeers();
-      logLine('muted', 'WebSocket geschlossen');
+      const code = evt && evt.code ? ` (code ${evt.code})` : '';
+      logLine('muted', `WebSocket geschlossen${code}`);
+      if (!state.userDisconnected) scheduleReconnect('Verbindung verloren');
     };
 
     ws.onerror = (e) => {
@@ -429,9 +466,16 @@
     }
   }
 
-  els.connectBtn.addEventListener('click', connect);
+  els.connectBtn.addEventListener('click', () => {
+    state.userDisconnected = false;
+    state.reconnectAttempt = 0;
+    cancelReconnect();
+    connect();
+  });
   els.disconnectBtn.addEventListener('click', () => {
-    logLine('muted', 'Trennung durch Benutzer');
+    state.userDisconnected = true;
+    cancelReconnect();
+    logLine('muted', 'Trennung durch Benutzer — kein Auto-Reconnect');
     tearDown();
     resetPeers();
   });
@@ -503,5 +547,9 @@
   applyEnvDefaults().then(() => {
     refreshState();
     loadWindows();
+    if (els.server.value.trim() && els.room.value.trim()) {
+      logLine('info', 'Auto-Connect…');
+      connect();
+    }
   });
 })();

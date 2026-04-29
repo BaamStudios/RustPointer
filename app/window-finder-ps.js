@@ -14,12 +14,14 @@ public static class WF {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowTextLength(IntPtr hWnd);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 }
 '@
 if (-not ('WF' -as [type])) { Add-Type -TypeDefinition $src -Language CSharp }
+$fg = [int64][WF]::GetForegroundWindow()
 
 $result = New-Object System.Collections.Generic.List[object]
 foreach ($p in [System.Diagnostics.Process]::GetProcesses()) {
@@ -46,16 +48,16 @@ foreach ($p in [System.Diagnostics.Process]::GetProcesses()) {
     bounds = @{ x = $rect.Left; y = $rect.Top; width = $w; height = $hgt }
   })
 }
-ConvertTo-Json -InputObject $result -Compress -Depth 4
+ConvertTo-Json -InputObject @{ foreground = $fg; windows = $result } -Compress -Depth 5
 `;
 
 let inflight = null;
-let cache = { ts: 0, list: [] };
+let cache = { ts: 0, list: [], foregroundId: 0 };
 const CACHE_TTL_MS = 80;
 
 function listWindowsAsync() {
   const now = Date.now();
-  if (now - cache.ts < CACHE_TTL_MS) return Promise.resolve(cache.list);
+  if (now - cache.ts < CACHE_TTL_MS) return Promise.resolve(cache);
   if (inflight) return inflight;
 
   inflight = new Promise((resolve) => {
@@ -71,24 +73,26 @@ function listWindowsAsync() {
     ps.on('error', (err) => {
       inflight = null;
       console.warn('[window-finder-ps] spawn error:', err.message);
-      resolve(cache.list);
+      resolve(cache);
     });
     ps.on('close', () => {
       inflight = null;
       const text = stdout.trim();
       if (!text) {
         if (stderr) console.warn('[window-finder-ps] stderr:', stderr.slice(0, 400));
-        resolve(cache.list);
+        resolve(cache);
         return;
       }
       try {
         const parsed = JSON.parse(text);
-        const list = Array.isArray(parsed) ? parsed : [parsed];
-        cache = { ts: Date.now(), list };
-        resolve(list);
+        const wins = parsed.windows;
+        const list = Array.isArray(wins) ? wins : (wins ? [wins] : []);
+        const foregroundId = Number(parsed.foreground) || 0;
+        cache = { ts: Date.now(), list, foregroundId };
+        resolve(cache);
       } catch (err) {
         console.warn('[window-finder-ps] parse error:', err.message, 'text head:', text.slice(0, 200));
-        resolve(cache.list);
+        resolve(cache);
       }
     });
   });
@@ -97,7 +101,7 @@ function listWindowsAsync() {
 }
 
 function snapshot() {
-  return cache.list;
+  return cache;
 }
 
 module.exports = {

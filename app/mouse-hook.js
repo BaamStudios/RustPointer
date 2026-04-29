@@ -17,6 +17,7 @@ const SEND_INTERVAL_MS = 16; // ~60 fps cap
 const state = {
   presenterActive: false,
   bounds: null,
+  focused: false,
   pressed: false,
   onCursor: null,
   onLog: null,
@@ -25,7 +26,8 @@ const state = {
   lastPayload: null,
   lastNoBoundsLog: 0,
   lastOutsideLog: 0,
-  lastInactiveLog: 0
+  lastInactiveLog: 0,
+  lastNoFocusLog: 0
 };
 
 function emitLog(level, message) {
@@ -69,6 +71,7 @@ function handleMouseMove(e) {
   if (!state.presenterActive) return;
   if (!state.pressed) return;
   if (!state.bounds) return;
+  if (!state.focused) return;
   if (!isInside(e.x, e.y, state.bounds)) return;
   const payload = buildPayload(e.x, e.y, true);
   if (payload) emitCursor(payload);
@@ -90,6 +93,14 @@ function handleMouseDown(e) {
     if (now - state.lastNoBoundsLog > 3000) {
       state.lastNoBoundsLog = now;
       emitLog('warn', 'Linksklick erkannt, aber kein Ziel-Fenster bekannt (Bounds fehlen).');
+    }
+    return;
+  }
+  if (!state.focused) {
+    const now = Date.now();
+    if (now - state.lastNoFocusLog > 3000) {
+      state.lastNoFocusLog = now;
+      emitLog('muted', 'Linksklick ignoriert — Ziel-Fenster nicht im Vordergrund.');
     }
     return;
   }
@@ -166,9 +177,23 @@ function setBounds(bounds) {
   state.bounds = bounds || null;
 }
 
+function setFocused(focused) {
+  const next = !!focused;
+  if (next === state.focused) return;
+  state.focused = next;
+  // Wenn Fokus während gehaltener Taste verloren geht: laufenden Press beenden
+  if (!next && state.pressed) {
+    state.pressed = false;
+    if (state.lastPayload) {
+      emitCursor({ x: state.lastPayload.x, y: state.lastPayload.y, pressed: false, t: Date.now() }, true);
+    }
+  }
+}
+
 module.exports = {
   start,
   stop,
   setPresenterActive,
-  setBounds
+  setBounds,
+  setFocused
 };

@@ -29,7 +29,10 @@ const state = {
   targetTitle: 'RustDesk',
   manualWindowId: null,
   lastBounds: null,
+  lastFocused: false,
+  lastTargetId: null,
   onBoundsChanged: null,
+  onFocusChanged: null,
   onLog: null,
   timer: null,
   lastNotFoundLog: 0,
@@ -47,7 +50,7 @@ function boundsEqual(a, b) {
 }
 
 function snapshotNative() {
-  if (!windowManager) return [];
+  if (!windowManager) return { list: [], foregroundId: 0 };
   const wins = [];
   for (const w of windowManager.getWindows()) {
     let visible = false;
@@ -65,7 +68,12 @@ function snapshotNative() {
       bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
     });
   }
-  return wins;
+  let foregroundId = 0;
+  try {
+    const active = windowManager.getActiveWindow();
+    if (active && active.id != null) foregroundId = active.id;
+  } catch {}
+  return { list: wins, foregroundId };
 }
 
 async function snapshotAsync() {
@@ -93,11 +101,18 @@ async function tick() {
   state.ticking = true;
   let bounds = null;
   let list = [];
+  let foregroundId = 0;
+  let focused = false;
+  let targetId = null;
   try {
-    list = await snapshotAsync();
+    const snap = await snapshotAsync();
+    list = snap.list || [];
+    foregroundId = snap.foregroundId || 0;
     const win = pickWindow(list);
     if (win && win.bounds && win.bounds.width > 0 && win.bounds.height > 0) {
       bounds = win.bounds;
+      targetId = win.id;
+      focused = String(win.id) === String(foregroundId);
     }
   } catch (err) {
     // ignore – nächster Tick
@@ -105,11 +120,20 @@ async function tick() {
     state.ticking = false;
   }
 
-  if (!boundsEqual(bounds, state.lastBounds)) {
+  if (!boundsEqual(bounds, state.lastBounds) || targetId !== state.lastTargetId) {
     state.lastBounds = bounds;
+    state.lastTargetId = targetId;
     if (state.onBoundsChanged) state.onBoundsChanged(bounds);
     if (bounds) {
       emitLog('info', `Fenster gefunden: ${bounds.width}×${bounds.height} @ (${bounds.x}, ${bounds.y})`);
+    }
+  }
+
+  if (focused !== state.lastFocused) {
+    state.lastFocused = focused;
+    if (state.onFocusChanged) state.onFocusChanged(focused);
+    if (bounds) {
+      emitLog(focused ? 'info' : 'muted', focused ? 'Ziel-Fenster im Vordergrund — Pointer aktiv' : 'Ziel-Fenster nicht im Vordergrund — Pointer pausiert');
     }
   }
 
@@ -141,9 +165,10 @@ function diagnose(list) {
   emitLog('warn', `Fenster "${matched[0].title}" gefunden, aber ohne gültige Bounds (minimiert?).`);
 }
 
-function start({ targetTitle, onBoundsChanged, onLog } = {}) {
+function start({ targetTitle, onBoundsChanged, onFocusChanged, onLog } = {}) {
   if (targetTitle) state.targetTitle = targetTitle;
   state.onBoundsChanged = onBoundsChanged || null;
+  state.onFocusChanged = onFocusChanged || null;
   state.onLog = onLog || null;
   if (state.timer) clearInterval(state.timer);
 
@@ -186,7 +211,8 @@ function setManualWindowId(id) {
 
 async function listWindows() {
   try {
-    return await snapshotAsync();
+    const snap = await snapshotAsync();
+    return snap.list || [];
   } catch (err) {
     console.warn('[window-finder] listWindows failed:', err.message);
     return [];

@@ -335,6 +335,9 @@ app.whenReady().then(() => {
         controlWindow.webContents.send('state-changed', publicState());
       }
     },
+    onFocusChanged: (focused) => {
+      mouseHook.setFocused(focused);
+    },
     onLog: ({ level, message }) => {
       logToControl(level, `[Fenster] ${message}`);
     }
