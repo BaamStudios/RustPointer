@@ -30,7 +30,8 @@
   const RTC_CONFIG = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' }
     ]
   };
 
@@ -233,9 +234,23 @@
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState;
       console.log('[pc] state:', st);
+      const kind = st === 'connected' ? 'info' : (st === 'failed' || st === 'disconnected' || st === 'closed' ? 'err' : 'muted');
+      logLine(kind, `Verbindungs-Status: ${st}`);
+      if (st === 'failed') {
+        logLine('err', 'Hinweis: P2P-Verbindung fehlgeschlagen — vermutlich symmetrisches NAT. TURN-Server nötig (siehe TURN_URL in .env).');
+      }
       if (st === 'failed' || st === 'disconnected' || st === 'closed') {
         setPeerStatus(false);
       }
+    };
+    pc.oniceconnectionstatechange = () => {
+      const st = pc.iceConnectionState;
+      console.log('[ice] state:', st);
+      const kind = (st === 'failed' || st === 'disconnected') ? 'err' : 'muted';
+      logLine(kind, `ICE-Status: ${st}`);
+    };
+    pc.onicegatheringstatechange = () => {
+      console.log('[ice] gathering:', pc.iceGatheringState);
     };
     pc.ondatachannel = (e) => {
       attachDataChannel(e.channel);
@@ -458,6 +473,15 @@
       updateBoundsLabel(s.rustDeskBounds);
     });
     window.presenter.onCursorSend((payload) => sendCursor(payload));
+    if (window.presenter.onLog) {
+      window.presenter.onLog(({ level, message }) => {
+        const kind = level === 'err' ? 'err' : (level === 'warn' ? 'send' : (level === 'muted' ? 'muted' : 'info'));
+        logLine(kind, message);
+      });
+    }
+    if (window.presenter.notifyControlReady) {
+      window.presenter.notifyControlReady();
+    }
   }
 
   async function applyEnvDefaults() {
@@ -466,6 +490,14 @@
     if (cfg.signalServerUrl) els.server.value = cfg.signalServerUrl;
     if (cfg.roomId) els.room.value = cfg.roomId;
     if (cfg.targetTitle) els.targetTitle.value = cfg.targetTitle;
+    if (cfg.turnUrl) {
+      RTC_CONFIG.iceServers.push({
+        urls: cfg.turnUrl,
+        username: cfg.turnUsername || undefined,
+        credential: cfg.turnCredential || undefined
+      });
+      logLine('info', `TURN-Server konfiguriert: ${cfg.turnUrl}`);
+    }
   }
 
   applyEnvDefaults().then(() => {

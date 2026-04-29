@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld('presenter', {
 
   sendCursorIncoming: (payload) => ipcRenderer.send('cursor-incoming', payload),
   notifyOverlayReady: () => ipcRenderer.send('overlay-ready'),
+  notifyControlReady: () => ipcRenderer.send('control-ready'),
+
+  onLog: (cb) => {
+    const listener = (_evt, entry) => cb(entry);
+    ipcRenderer.on('log', listener);
+    return () => ipcRenderer.removeListener('log', listener);
+  },
 
   onStateChanged: (cb) => {
     const listener = (_evt, s) => cb(s);

@@ -14,8 +14,30 @@ const ENV = {
   targetTitle: (process.env.TARGET_WINDOW_TITLE || 'RustDesk').trim(),
   defaultMode: ['sender', 'receiver', 'both'].includes((process.env.DEFAULT_MODE || '').trim())
     ? process.env.DEFAULT_MODE.trim()
-    : 'sender'
+    : 'sender',
+  turnUrl: (process.env.TURN_URL || '').trim(),
+  turnUsername: (process.env.TURN_USERNAME || '').trim(),
+  turnCredential: (process.env.TURN_CREDENTIAL || '').trim()
 };
+
+const logBuffer = [];
+let controlReady = false;
+
+function logToControl(level, message) {
+  if (!controlReady || !controlWindow || controlWindow.isDestroyed()) {
+    logBuffer.push({ level, message });
+    if (logBuffer.length > 200) logBuffer.shift();
+    return;
+  }
+  controlWindow.webContents.send('log', { level, message });
+}
+
+function flushLogBuffer() {
+  if (!controlWindow || controlWindow.isDestroyed()) return;
+  while (logBuffer.length) {
+    controlWindow.webContents.send('log', logBuffer.shift());
+  }
+}
 
 let controlWindow = null;
 let overlayWindow = null;
@@ -52,6 +74,11 @@ function createControlWindow() {
       e.preventDefault();
       controlWindow.hide();
     }
+  });
+
+  controlWindow.webContents.on('did-finish-load', () => {
+    controlReady = true;
+    flushLogBuffer();
   });
 }
 
@@ -225,7 +252,10 @@ ipcMain.handle('get-config', () => ({
   signalServerUrl: ENV.signalServerUrl,
   roomId: ENV.roomId,
   targetTitle: ENV.targetTitle,
-  defaultMode: ENV.defaultMode
+  defaultMode: ENV.defaultMode,
+  turnUrl: ENV.turnUrl,
+  turnUsername: ENV.turnUsername,
+  turnCredential: ENV.turnCredential
 }));
 
 ipcMain.handle('get-state', () => publicState());
@@ -278,6 +308,11 @@ ipcMain.on('overlay-ready', () => {
   }
 });
 
+ipcMain.on('control-ready', () => {
+  controlReady = true;
+  flushLogBuffer();
+});
+
 app.whenReady().then(() => {
   if (process.platform === 'win32') app.setAppUserModelId('Presenter-Cursor');
 
@@ -299,6 +334,9 @@ app.whenReady().then(() => {
       if (controlWindow && !controlWindow.isDestroyed()) {
         controlWindow.webContents.send('state-changed', publicState());
       }
+    },
+    onLog: ({ level, message }) => {
+      logToControl(level, `[Fenster] ${message}`);
     }
   });
 
